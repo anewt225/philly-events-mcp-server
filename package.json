@@ -1,0 +1,33 @@
+{
+  "name": "philly-events-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for discovering Philadelphia events - scrapes do215, Visit Philly, Eventbrite, and more",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch"
+  },
+  "keywords": [
+    "mcp",
+    "philadelphia",
+    "events",
+    "calendar",
+    "ai-agent"
+  ],
+  "author": "Alex Newton",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "axios": "^1.6.0",
+    "cheerio": "^1.0.0-rc.12",
+    "express": "^4.18.2",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.0"
+  }
+}
