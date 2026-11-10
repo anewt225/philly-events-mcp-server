@@ -1,81 +1,87 @@
-# 🏛️ Philly Events MCP Server
+# Philly Events MCP Server
 
-An MCP (Model Context Protocol) server that enables AI assistants to discover and search Philadelphia events from multiple sources. This project demonstrates modern AI infrastructure patterns including tool-based agents, semantic search, and structured data aggregation.
+A [Model Context Protocol](https://modelcontextprotocol.io) server that gives an AI assistant six tools for finding things to do in Philadelphia. It pulls event listings from Do215, Visit Philly and Eventbrite, normalizes them into one event shape, and lets the assistant filter by category, neighborhood, date and price.
 
-## 🎯 Project Overview
+Written in TypeScript with the official MCP SDK, Zod input schemas, and cheerio for HTML parsing. Runs over stdio (Claude Desktop, Claude Code) or as a small HTTP service.
 
-This MCP server aggregates events from Philadelphia's top event sources:
+## Status
 
-- **Do215** - Local indie events, arts, music, nightlife
-- **Visit Philly** - Tourism-focused events, major attractions
-- **Eventbrite** - Ticketed events, workshops, professional networking
+**The MCP layer works. The scrapers need selector work before they return real events.**
 
-It provides a unified API that AI agents can use to help users discover things to do in Philadelphia.
+Checked on 2026-11-10 with Node 22:
 
-## 🚀 Features
+| Part | State |
+|---|---|
+| `npm install`, `npm run build` | Works |
+| Server start, stdio and HTTP | Works |
+| All six tools register and answer | Works |
+| `philly_list_categories`, `philly_list_neighborhoods` | Return real data (they are static lists) |
+| Event search against the live sites | **Returns zero events.** All three sites answer `200`, but the CSS selectors in `src/services/eventScraper.ts` are first-pass guesses and match nothing in the current page markup |
+| `philly_export_to_calendar` | Works on events found earlier in the same session, so it has nothing to export until search does |
 
-### Tools Available
+So today this repo is a complete, typed MCP server with a parsing layer that still has to be fitted to each site. That is the next piece of work (see [Roadmap](#roadmap)).
 
-| Tool | Description |
-|------|-------------|
-| `philly_search_events` | Search events across all sources with powerful filters |
-| `philly_search_source` | Search a specific event source |
-| `philly_export_to_calendar` | Export events to Google Calendar format |
-| `philly_list_categories` | List all event categories |
-| `philly_list_neighborhoods` | List Philadelphia neighborhoods |
-| `philly_weekly_digest` | Generate a curated weekly event digest |
+## Tools
 
-### Search Capabilities
+| Tool | What it does |
+|---|---|
+| `philly_search_events` | Queries all three sources, merges the results, removes duplicates, sorts by start date. Filters: `query`, `categories`, `neighborhoods`, `start_date`, `end_date`, `is_free`, `max_price`, `limit`, `offset` |
+| `philly_search_source` | Same search against one source: `do215`, `visitphilly` or `eventbrite` |
+| `philly_weekly_digest` | Events for the next seven days, grouped by category, up to five shown per category |
+| `philly_export_to_calendar` | Converts event IDs from an earlier search into Google Calendar event JSON (title, description, location, start and end in `America/New_York`). It builds the payload only; it does not call the Calendar API |
+| `philly_list_categories` | The 15 categories plus `other`, with the keywords behind each |
+| `philly_list_neighborhoods` | The 22 neighborhoods the filter recognizes |
 
-- **Text search** - Match against titles, descriptions, locations
-- **Category filters** - Music, food/drink, arts, sports, nightlife, comedy, etc.
-- **Neighborhood filters** - Fishtown, Center City, Rittenhouse, and 20+ more
-- **Date range** - Find events for specific time periods
-- **Price filters** - Free events or max price limits
-- **Pagination** - Handle large result sets efficiently
+Search tools return Markdown by default, or JSON with `response_format: "json"`. Every tool is annotated read-only.
 
-## 📦 Installation
+## Install
+
+Requires Node.js 18 or later (the MCP SDK's minimum; built and run here on Node 22).
 
 ```bash
-# Clone the repository
 git clone https://github.com/anewt225/philly-events-mcp-server.git
 cd philly-events-mcp-server
-
-# Install dependencies
 npm install
-
-# Build the TypeScript
 npm run build
 ```
 
-## 🔧 Usage
+`npm run build` compiles `src/` to `dist/`. `npm run dev` runs the compiler in watch mode.
 
-### Running with stdio (Local Development)
+## Run
+
+### stdio (local use)
 
 ```bash
 npm start
 ```
 
-### Running with HTTP (Production)
+The server waits for MCP messages on stdin and logs to stderr.
+
+### HTTP
 
 ```bash
+# macOS, Linux, Git Bash
 TRANSPORT=http PORT=3000 npm start
 ```
 
-### Adding it to Claude
+```powershell
+# Windows PowerShell
+$env:TRANSPORT = "http"; $env:PORT = "3000"; npm start
+```
 
-First clone, `npm install` and `npm run build` (see Installation) so that `dist/index.js` exists. Then use the absolute path to that file below.
+This serves MCP over streamable HTTP at `POST /mcp` (stateless, JSON responses) and a health check at `GET /health`. `PORT` defaults to 3000. There is no authentication, so keep it on localhost or put it behind something that adds auth.
 
-**Claude Code** (one command):
+### Connect it to Claude
+
+Build first so that `dist/index.js` exists, then point Claude at the absolute path to that file.
+
+**Claude Code**
 
 ```bash
 claude mcp add philly-events -- node /absolute/path/to/philly-events-mcp-server/dist/index.js
 ```
 
-**Claude Desktop**: open Settings → Developer → Edit Config, or edit `claude_desktop_config.json` directly:
-
-- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+**Claude Desktop**: Settings → Developer → Edit Config, or edit `claude_desktop_config.json` directly (`~/Library/Application Support/Claude/` on macOS, `%APPDATA%\Claude\` on Windows):
 
 ```json
 {
@@ -88,111 +94,73 @@ claude mcp add philly-events -- node /absolute/path/to/philly-events-mcp-server/
 }
 ```
 
-On Windows, use forward slashes or escaped backslashes in the path (for example `C:/Users/you/projects/philly-events-mcp-server/dist/index.js`). Restart Claude Desktop after saving; the `philly_*` tools then appear in the tools menu.
+On Windows, write the path with forward slashes or escaped backslashes, for example `C:/Users/you/projects/philly-events-mcp-server/dist/index.js`. Restart Claude Desktop after saving.
 
-## 💡 Example Queries
-
-Once connected, you can ask Claude things like:
-
-- *"What's happening in Fishtown this weekend?"*
-- *"Find free outdoor events in Philadelphia"*
-- *"Show me live music events under $30"*
-- *"Generate a weekly digest of food and drink events"*
-- *"Find comedy shows in Center City next Friday"*
-
-## 🏗️ Architecture
-
-```
-philly-events-mcp-server/
-├── src/
-│   ├── index.ts           # MCP server + tool registration
-│   ├── types.ts           # TypeScript interfaces
-│   ├── constants.ts       # Configuration constants
-│   ├── schemas/           # Zod validation schemas
-│   │   └── eventSchemas.ts
-│   └── services/          # Business logic
-│       └── eventScraper.ts
-├── package.json
-├── tsconfig.json
-└── README.md
-```
-
-### Key Design Decisions
-
-1. **MCP Protocol** - Uses Anthropic's Model Context Protocol for seamless AI integration
-2. **TypeScript** - Strong typing for reliability and maintainability
-3. **Zod Schemas** - Runtime validation with clear error messages
-4. **Modular Scrapers** - Each source is independent and can be updated separately
-5. **In-Memory Cache** - Efficient event retrieval within a session
-
-## 🔜 Roadmap
-
-### Phase 2: Intelligence Layer
-- [ ] Implement RAG with vector database for semantic search
-- [ ] Add preference learning based on user selections
-- [ ] Build recommendation engine
-
-### Phase 3: Product Features
-- [ ] Google Calendar API integration
-- [ ] Weekly email digest automation
-- [ ] User preference profiles
-- [ ] Event similarity matching
-
-## 🧪 Testing
+### Try the tools without Claude
 
 ```bash
-# Build and verify
-npm run build
-
-# Test with MCP Inspector
 npx @modelcontextprotocol/inspector node dist/index.js
 ```
 
-## 📊 Event Categories
+The MCP Inspector lists the six tools and lets you call each one by hand.
 
-| Category | Description |
-|----------|-------------|
-| `music` | Concerts, live music, DJs |
-| `food_drink` | Food events, happy hours, tastings |
-| `arts_culture` | Museums, galleries, exhibitions |
-| `sports` | Sports games, fitness events |
-| `nightlife` | Clubs, parties, bar events |
-| `comedy` | Stand-up, improv, sketch |
-| `outdoor` | Parks, hiking, outdoor activities |
-| `family` | Kid-friendly events |
-| `community` | Neighborhood events, meetups |
-| `workshop` | Classes, learning events |
-| `networking` | Professional events |
-| `film` | Movies, screenings |
-| `theater` | Plays, musicals |
-| `markets` | Farmers markets, flea markets |
-| `festivals` | Festivals, celebrations |
+## How it works
 
-## 🏘️ Neighborhoods
+```
+assistant ──MCP──▶ index.ts (6 tools, Zod-validated input)
+                      │
+                      ▼
+              eventScraper.ts
+   fetch page (axios, 10 s timeout, up to 3 retries with backoff)
+        → parse event cards (cheerio)
+        → classify by keyword        → 15 categories
+        → match venue text           → 22 neighborhoods
+        → parse price text           → free / min / max
+        → filter, merge, de-duplicate, sort by date
+                      │
+                      ▼
+        Markdown or JSON back to the assistant
+```
 
-Center City, Rittenhouse, Old City, Northern Liberties, Fishtown, University City, Manayunk, East Passyunk, South Philly, Fairmount, Gayborhood, Chinatown, Queen Village, Graduate Hospital, Brewerytown, Kensington, Port Richmond, Germantown, Chestnut Hill, Mount Airy, Hawthorne, Bella Vista
+- **One event shape.** Every source is mapped to the same `PhillyEvent` type (`src/types.ts`), so filters and formatting are written once.
+- **Classification is rule-based.** Categories come from keyword lists and neighborhoods from substring matches on the venue text. There is no model call and no embedding search inside the server; the assistant on the other end supplies the language understanding.
+- **Duplicates across sources** are removed by comparing the first 30 alphanumeric characters of the lowercased title.
+- **Sources fail independently.** If one site times out, the other two still return (`Promise.allSettled`).
+- **Session cache.** Events returned by a search are held in memory so that `philly_export_to_calendar` can look them up by ID. The cache lasts as long as the process and has no expiry.
+- The scraper identifies itself with a descriptive `User-Agent` that links back to this repo.
 
-## 📄 License
+## Known limitations
 
-MIT License - Feel free to use and modify for your own projects.
+- **Selectors are placeholders** (see [Status](#status)). No events come back from the live sites yet.
+- **Paging happens per source.** `limit` and `offset` are applied to each source before the merge, so an aggregated search can return up to three times `limit`, and `offset` does not page through the merged list.
+- **Unparseable dates fall back to the current time**, which would put such events at the top of a date-sorted list.
+- **Visit Philly prices are not parsed.** Those events are always marked as not free, with no price.
+- **Neighborhood filtering depends on the venue text naming the neighborhood.** A venue listed only by street address will not match.
+- The input schema for `philly_search_source` also accepts `whenwherewhat`, `uwishunu` and `phillymag`. Those sources are not implemented and return an error.
+- The `CACHE_TTL` values in `src/constants.ts` are defined but not used.
+- **No automated tests and no CI yet.**
+- This reads public listing pages. Check each site's terms of use before running it at any volume.
 
-## 🤝 Contributing
+## Roadmap
 
-Contributions welcome! This project is designed to be extended:
+1. Fit the parsers to each site's real markup, preferring embedded structured data (JSON-LD `Event` objects) over CSS classes where a site provides it.
+2. Save sample pages as fixtures and add parser tests, so a markup change shows up as a failing test instead of an empty result.
+3. Merge first, then filter and page, so `limit` and `offset` behave as documented.
+4. Later: write events to Google Calendar through its API, a scheduled weekly digest, and saved preferences.
 
-- Add new event sources
-- Improve scraping accuracy
-- Enhance category classification
-- Add new tool capabilities
+## Project layout
 
-## 👤 Author
+```
+src/
+├── index.ts                  MCP server, tool registration, stdio and HTTP transports
+├── types.ts                  PhillyEvent and related types, neighborhood list, category keywords
+├── constants.ts              source URLs, timeouts, retry settings
+├── schemas/eventSchemas.ts   Zod input schemas for each tool
+└── services/eventScraper.ts  fetching, parsing, classification, filtering, de-duplication
+```
 
-Built as a portfolio project demonstrating:
-- Modern MCP server development
-- AI agent infrastructure
-- Product thinking for local discovery
-- TypeScript best practices
+## License
 
----
+[MIT](LICENSE)
 
-*Made with ❤️ for Philadelphia*
+Built by [Alex Newton](https://github.com/anewt225).
